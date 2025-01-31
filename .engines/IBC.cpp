@@ -1,19 +1,19 @@
 #include <iostream>
-#include <string>
-#include <unordered_map>  // Add this line here
-#include <memory>
 #include <vector>
+#include <string>
+#include <memory>
 #include <chrono>
 #include <thread>
 #include <algorithm>
-
+#include <unordered_map>
 #include "cosmos_sdk_integration.h"
 #include "ibc_integration.h"
 #include "bitcore_integration.h"
 #include "ethereum_integration.h"
 
-#define MEMORY_CAPACITY 10
-#define CHECK_INTERVAL_SECONDS 60 // Check ledger integrity every minute
+// Use constexpr for compile-time constants
+static constexpr size_t MEMORY_CAPACITY = 10;
+static constexpr int CHECK_INTERVAL_SECONDS = 60;
 
 class InterchainFiatBackedEngine {
 private:
@@ -21,10 +21,19 @@ private:
     std::unordered_map<std::string, int> long_term_memory;
     int JKE_counter = 0;
     std::vector<std::string> suspicious_transactions;
-    double ATOM_value = 5.89; // Starting from a hypothetical value
+    double ATOM_value = 5.89; // Default starting value, should be configurable
+    std::vector<std::string> reserves; // To store BTC and ETH reserve addresses
 
 public:
-    InterchainFiatBackedEngine() : short_term_memory(MEMORY_CAPACITY) {}
+    InterchainFiatBackedEngine() : short_term_memory(MEMORY_CAPACITY) {
+        // Initialize reserves with example strings; can be updated via updateReserves
+        reserves = {"btc_address_example", "eth_address_example"};
+    }
+
+    // Method to update the reserve addresses
+    void updateReserves(const std::string& btc_address, const std::string& eth_address) {
+        reserves = {btc_address, eth_address};
+    }
 
     void checkLedgerIntegrity() {
         auto cosmos_ledger = cosmos_sdk_get_full_ledger();
@@ -36,14 +45,24 @@ public:
         detectFraud(cosmos_ledger, ibc_ledger, bitcoin_ledger, ethereum_ledger);
     }
 
-    void checkFiatBackingConsistency(const CosmosLedger& cosmos_ledger, const BitcoinLedger& bitcoin_ledger, const EthereumLedger& ethereum_ledger) {
-        double btcValue = bitcore_getReserveValue("btc_address_example");
-        double ethValue = ethereum_getReserveValue("eth_address_example");
+    void checkFiatBackingConsistency(const CosmosLedger& cosmos_ledger, 
+                                     const BitcoinLedger& bitcoin_ledger, 
+                                     const EthereumLedger& ethereum_ledger) {
+        double btcValue = 0.0;
+        double ethValue = 0.0;
+        
+        if (reserves.size() >= 2 && !reserves[0].empty() && !reserves[1].empty()) {
+            btcValue = bitcore_getReserveValue(reserves[0]);
+            ethValue = ethereum_getReserveValue(reserves[1]);
+        } else {
+            std::cerr << "Warning: Reserve addresses not properly initialized" << std::endl;
+        }
+        
         ATOM_value = (btcValue + ethValue) / 10000; // Example ratio for pegging ATOM value
     }
 
-    void detectFraud(const CosmosLedger& cosmos_ledger, const IBCLedger& ibc_ledger, const BitcoinLedger& bitcoin_ledger, const EthereumLedger& ethereum_ledger) {
-        // Check transactions across all ledgers for suspicious activity
+    void detectFraud(const CosmosLedger& cosmos_ledger, const IBCLedger& ibc_ledger, 
+                     const BitcoinLedger& bitcoin_ledger, const EthereumLedger& ethereum_ledger) {
         checkLedgerForFraud(cosmos_ledger, "cosmos");
         checkLedgerForFraud(ibc_ledger, "ibc");
         checkLedgerForFraud(bitcoin_ledger, "bitcoin");
@@ -52,8 +71,8 @@ public:
 
     template<typename LedgerType>
     void checkLedgerForFraud(const LedgerType& ledger, const std::string& chain) {
-        for (size_t i = 0; i < ledger.blocks.size(); ++i) {
-            for (const auto& transaction : ledger.blocks[i].transactions) {
+        for (const auto& block : ledger.blocks) {
+            for (const auto& transaction : block.transactions) {
                 if (isSuspicious(transaction, chain)) {
                     suspicious_transactions.push_back(transaction.id);
                     logSuspiciousTransaction(transaction, chain);
@@ -62,18 +81,34 @@ public:
         }
     }
 
+    // Generalized method for checking suspicious transactions across chains
     bool isSuspicious(const Transaction& transaction, const std::string& chain) {
         if (chain == "cosmos") return isCosmosSuspicious(transaction);
-        if (chain == "ibc") return isIBCSuspicious(transaction);
-        if (chain == "bitcoin") return isBitcoinSuspicious(transaction);
-        if (chain == "ethereum") return isEthereumSuspicious(transaction);
+        if (chain == "ibc") return isIBCSuspicious(static_cast<const IBCTx&>(transaction));
+        if (chain == "bitcoin") return isBitcoinSuspicious(static_cast<const BitcoinTransaction&>(transaction));
+        if (chain == "ethereum") return isEthereumSuspicious(static_cast<const EthereumTransaction&>(transaction));
         return false;
     }
 
-    bool isCosmosSuspicious(const Transaction& transaction) { return false; } // Placeholder
-    bool isIBCSuspicious(const IBCTx& transaction) { return false; } // Placeholder
-    bool isBitcoinSuspicious(const BitcoinTransaction& transaction) { return false; } // Placeholder
-    bool isEthereumSuspicious(const EthereumTransaction& transaction) { return false; } // Placeholder
+    bool isCosmosSuspicious(const Transaction& transaction) {
+        // TODO: Implement actual fraud detection for Cosmos
+        return false; 
+    }
+
+    bool isIBCSuspicious(const IBCTx& transaction) {
+        // TODO: Implement actual fraud detection for IBC
+        return false; 
+    }
+
+    bool isBitcoinSuspicious(const BitcoinTransaction& transaction) {
+        // TODO: Implement actual fraud detection for Bitcoin
+        return false; 
+    }
+
+    bool isEthereumSuspicious(const EthereumTransaction& transaction) {
+        // TODO: Implement actual fraud detection for Ethereum
+        return false; 
+    }
 
     void logSuspiciousTransaction(const Transaction& transaction, const std::string& chain) {
         std::cout << "Suspicious " << chain << " transaction detected: " << transaction.id << std::endl;
@@ -83,13 +118,13 @@ public:
     void novelinput(const std::string& input) {
         manageMemory(input);
         if (input.substr(0, 4) == "txid") {
-            checkLedgerIntegrityForTransaction(input, "cosmos");
+            checkLedgerIntegrityForTransaction(input.substr(4), "cosmos");
         } else if (input.substr(0, 8) == "btc_txid") {
-            checkLedgerIntegrityForTransaction(input, "bitcoin");
+            checkLedgerIntegrityForTransaction(input.substr(8), "bitcoin");
         } else if (input.substr(0, 8) == "eth_txid") {
-            checkLedgerIntegrityForTransaction(input, "ethereum");
+            checkLedgerIntegrityForTransaction(input.substr(8), "ethereum");
         } else if (input.substr(0, 3) == "ibc") {
-            checkLedgerIntegrityForTransaction(input, "ibc");
+            checkLedgerIntegrityForTransaction(input.substr(3), "ibc");
         }
     }
 
@@ -113,41 +148,51 @@ public:
         else if (chain == "bitcoin") tx = bitcore_get_transaction(txid);
         else if (chain == "ethereum") tx = ethereum_get_transaction(txid);
         else if (chain == "ibc") tx = ibc_get_transaction(txid);
-        
+
         if (isSuspicious(tx, chain)) {
             suspicious_transactions.push_back(txid);
             logSuspiciousTransaction(tx, chain);
         }
     }
 
+    double getATOMValue() const {
+        return ATOM_value;
+    }
+
     std::string process_conversation(const std::string& user_input) {
         novelinput(user_input);
 
-        do {
+        bool shouldContinue = true;
+        while (shouldContinue) {
             update_persistent_state();
             for (const auto& item : short_term_memory) {
                 analyze_context(item);
             }
             checkLedgerIntegrity();
             std::this_thread::sleep_for(std::chrono::seconds(CHECK_INTERVAL_SECONDS));
-        } while (true);
 
+            // Example condition to break the loop
+            if (/* some exit condition */) {
+                shouldContinue = false;
+            }
+        }
         return "Processing...";
     }
 
+private:
     void update_persistent_state() {
-        // Update state for Cosmos, IBC, Bitcoin, and Ethereum networks
+        // Implementation for updating persistent state
     }
 
     void analyze_context(const std::string& memory_item) {
-        // Analyze context across networks
+        // Implementation for context analysis
     }
 };
 
 int main() {
     InterchainFiatBackedEngine engine;
     std::cout << "Interchain Fiat Backed Engine running..." << std::endl;
-    std::cout << "Current ATOM Value: $" << engine.ATOM_value << std::endl;
+    std::cout << "Current ATOM Value: $" << engine.getATOMValue() << std::endl;
     engine.process_conversation(""); 
     return 0;
 }
