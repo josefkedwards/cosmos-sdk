@@ -13,7 +13,7 @@
 
 // Use constexpr for compile-time constants
 static constexpr size_t MEMORY_CAPACITY = 10;
-static constexpr int CHECK_INTERVAL_SECONDS = 60;
+static constexpr int CHECK_INTERVAL_SECONDS = 60; // Check ledger integrity every minute
 
 class InterchainFiatBackedEngine {
 private:
@@ -36,13 +36,18 @@ public:
     }
 
     void checkLedgerIntegrity() {
-        auto cosmos_ledger = cosmos_sdk_get_full_ledger();
-        auto ibc_ledger = ibc_get_ledger_state();
-        auto bitcoin_ledger = bitcore_get_full_ledger();
-        auto ethereum_ledger = ethereum_get_full_ledger();
+        try {
+            auto cosmos_ledger = cosmos_sdk_get_full_ledger();
+            auto ibc_ledger = ibc_get_ledger_state();
+            auto bitcoin_ledger = bitcore_get_full_ledger();
+            auto ethereum_ledger = ethereum_get_full_ledger();
 
-        checkFiatBackingConsistency(cosmos_ledger, bitcoin_ledger, ethereum_ledger);
-        detectFraud(cosmos_ledger, ibc_ledger, bitcoin_ledger, ethereum_ledger);
+            checkFiatBackingConsistency(cosmos_ledger, bitcoin_ledger, ethereum_ledger);
+            detectFraud(cosmos_ledger, ibc_ledger, bitcoin_ledger, ethereum_ledger);
+        } catch (const std::exception& e) {
+            std::cerr << "Error retrieving ledger states: " << e.what() << std::endl;
+            // Consider implementing retry logic or alerting mechanisms here
+        }
     }
 
     void checkFiatBackingConsistency(const CosmosLedger& cosmos_ledger, 
@@ -157,6 +162,32 @@ public:
 
     double getATOMValue() const {
         return ATOM_value;
+    }
+
+    void mintATOM(double amount) {
+        if (amount <= 0) {
+            std::cerr << "Attempt to mint non-positive amount of ATOM." << std::endl;
+            return;
+        }
+
+        // Here you would typically interact with the blockchain or ledger to actually mint tokens
+        ATOM_value += amount; // Update the internal value counter
+        std::cout << "Minted " << amount << " ATOM. New total: " << ATOM_value << std::endl;
+        // Log event or trigger event for external systems
+        // log_event("Minted ATOM", amount);
+    }
+
+    void burnATOM(double amount) {
+        if (amount <= 0 || amount > ATOM_value) {
+            std::cerr << "Attempt to burn invalid amount of ATOM." << std::endl;
+            return;
+        }
+
+        // Here you would typically interact with the blockchain or ledger to actually burn tokens
+        ATOM_value -= amount; // Update the internal value counter
+        std::cout << "Burned " << amount << " ATOM. New total: " << ATOM_value << std::endl;
+        // Log event or trigger event for external systems
+        // log_event("Burned ATOM", amount);
     }
 
     std::string process_conversation(const std::string& user_input) {
