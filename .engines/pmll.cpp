@@ -14,6 +14,22 @@
 #define MEMORY_CAPACITY 10
 #define CHECK_INTERVAL_SECONDS 60 // Check ledger integrity every minute
 
+type CosmosSDKWithPMLLAndIBC struct {
+    pmllMu     sync.Mutex
+    pmllEngine *pmll_integration.InterchainFiatBackedEngine
+    ibcMu      sync.Mutex
+    ibcHandler *ibc_integration.IBCManager
+
+func (sdk *CosmosSDKWithPMLLAndIBC) HandleTransaction(txID string, chain string) error {
+    // First, check the transaction integrity using PMLL
+    sdk.pmllEngine.CheckLedgerIntegrityForTransaction(txID, chain)
+
+    // Then, manage the transaction through IBC if applicable
+    if chain == "ibc" {
+        if err := sdk.ibcHandler.ProcessTransaction(txID); err != nil {
+            return fmt.Errorf("IBC transaction processing failed: %v", err)
+        }
+
 class InterchainFiatBackedEngine {
 private:
     std::vector<std::string> short_term_memory;
