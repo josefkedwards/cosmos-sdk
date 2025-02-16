@@ -92,8 +92,6 @@ jobs:
         curl -X POST -H "Authorization: Bearer $BLOCKCYPHER_TOKEN" \
           -d '{"action":"sync","target":"CosmosSDK"}' \
           https://api.blockcypher.com/v1/blockchains/pulse
-name: Go and .NET Workflow
-
 on:
   push:
     branches: [ "main" ]
